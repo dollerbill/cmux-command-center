@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>cmux command center</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <span class="logo">&#128760;</span>
+    <h1>cmux <span class="dim">command center</span></h1>
+    <span id="conn" class="pill"><span class="dot"></span> connecting&hellip;</span>
+    <span class="spacer"></span>
+    <span id="counts" class="pill"></span>
+  </div>
+
+  <div class="body">
+    <div id="list" class="col list"></div>
+    <div class="col detail">
+      <div class="dhead">
+        <span id="d-name" class="cname">&mdash;</span>
+        <span id="d-badge"></span>
+      </div>
+      <pre id="term" class="term">Select a session to view its surface&hellip;</pre>
+      <div class="keys" id="keys"></div>
+      <div class="inputbar">
+        <input id="cmdin" placeholder="Type &mdash; sends to this session&hellip;" autocomplete="off" />
+        <button class="send" id="sendbtn">Send</button>
+      </div>
+      <div id="target" class="target"></div>
+    </div>
+  </div>
+
+  <div class="mocknote" id="note"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
