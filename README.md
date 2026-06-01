@@ -21,10 +21,12 @@ planned enhancements are tracked in [`REMAINING.md`](./REMAINING.md).
   self-contained ANSI→HTML converter (no external dependency) and strips
   unrenderable Nerd Font prompt glyphs.
 - **Send text** to the active pane, plus a key bar (Esc/Tab/arrows/Ctrl-C/y/n/Enter).
-- **Approve / Deny** — shown **only** in the detail pane, and **only** when the
-  selected session's screen actually shows a permission picker (detected via
-  `detect_approval`). A notification alone never enables approval, because
-  "Waiting"/"Completed" notifications are not approvable.
+- **Approve / Deny** — shown in the detail pane **only** when cmux's Feed
+  reports a *pending* `permissionRequest` for the selected workspace (queried
+  via `feed.list`, joined by cwd). Approve answers `feed.permission.reply`
+  with `mode:once`, Deny with `mode:deny` — no screen-parsing, no typing "1".
+  The bar shows *what* is being approved (e.g. "Allow Bash?"). A
+  "Waiting"/"Completed" notification alone never enables approval.
 - **Telegram push** when a workspace starts needing you (optional; reuses your
   existing Hermes bot pipe instead of building web-push).
 
@@ -34,7 +36,8 @@ planned enhancements are tracked in [`REMAINING.md`](./REMAINING.md).
 browser (iPhone/iPad/laptop, on tailnet)
         |  http
    FastAPI server  (this app, runs next to cmux on the laptop)
-        |  subprocess: cmux list-workspaces / list-notifications / read-screen / send / send-key
+        |  subprocess: cmux list-workspaces / list-notifications / read-screen
+        |              / send / send-key / rpc feed.list / rpc feed.permission.reply
       cmux  (macOS app)
 ```
 
@@ -65,20 +68,20 @@ These were unknown when the wrapper was first written and are now confirmed in
   No git branch / PR fields are exposed by the CLI.
 - `list-notifications --json` → array of `{ tab_title, title, subtitle, body,
   is_read, workspace_id, surface_id, created_at }`.
-- **Join key:** notifications carry a `workspace_id` UUID that is *absent* from
-  `list-workspaces`. The only shared field is **`tab_title` ↔ `title`** (the
-  label). String-based, so keep workspace titles distinct.
+- **Join key:** notifications carry a `workspace_id` UUID. `list-workspaces
+  --json --id-format both` exposes the same UUID as `id`, so we join on
+  **`workspace_id` ↔ workspace `id`** (collision-proof), falling back to
+  `tab_title` ↔ `title` only when a UUID is missing.
+- **Permission prompts:** `cmux rpc feed.list` returns Feed items including
+  `{ kind:"permissionRequest", status:"pending", request_id, title, tool_name,
+  cwd }`. Answer with `feed.permission.reply { request_id, mode }`,
+  `mode ∈ once|always|all|bypass|deny`. Feed items have no `workspace_id`, so a
+  pending request joins to a workspace by **`cwd` ↔ `current_directory`**.
 - Targeting (`read-screen` / `send` / `send-key`) accepts the workspace `ref`
   (e.g. `workspace:4`) as `--workspace`.
-
-## Still to verify
-
-- **`send-key` key naming** (`Return`, `Escape`, `C-c`, …) — assumed, not yet
-  confirmed against a failing case.
-- **Approve/Deny picker sequence** in `app/main.py` assumes the numbered picker
-  (1 = Yes, 3 = No). The notifications seen so far were *Completed*/*Waiting*,
-  not a real permission prompt — confirm `detect_approval` fires and the
-  sequence is right the next time a session genuinely asks permission.
+- **`send-key` naming** is lowercase: `enter`, `escape`, `tab`, `up`, `down`,
+  `ctrl+c` (not tmux-style `Return` / `C-c`). Confirmed via `cmux send-key
+  --help` and live spot-checks (`escape`/`up` → `OK surface:N workspace:N`).
 
 ## The two operational gotchas
 
@@ -114,8 +117,8 @@ streaming*, which is the single item that unlocks both smooth updates and color.
 | Kind-aware badges (done / your turn / needs you) | ✅ working |
 | Terminal surface view | ✅ working (clean text; low color — see above) |
 | ANSI→HTML + PUA-glyph strip | ✅ working, no external dep |
-| Send text / keys | ✅ working (verify `send-key` names) |
-| Approve / Deny (prompt-gated) | ⚠️ working; verify picker on a real prompt |
+| Send text / keys | ✅ working (`enter`/`ctrl+c` confirmed; arrows inferred) |
+| Approve / Deny (Feed RPC) | ✅ working, verified live (`feed.permission.reply`) |
 | Telegram push | ✅ working if creds set; silent no-op otherwise |
 | Live streaming surface (+ color) | ❌ not implemented — see `REMAINING.md` |
 | Auth / bearer token | ❌ not implemented — tailnet-only |

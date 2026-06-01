@@ -139,7 +139,9 @@ body{
 .key:active{transform:translateY(1px)}
 
 /* ---- approve bar (detail pane only, shown when a prompt is detected) ---- */
-.approve{display:flex; gap:9px; margin-top:12px}
+.approve{display:flex; gap:9px; margin-top:12px; align-items:center}
+.approve-what{flex:1 1 auto; font-size:12.5px; font-weight:600; color:var(--muted, #9aa);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .btn{flex:1; border:none; border-radius:9px; padding:10px; font-size:12.5px;
   font-weight:700; cursor:pointer; font-family:inherit; transition:.1s}
 .btn:active{transform:translateY(1px)}

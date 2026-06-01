@@ -111,9 +111,31 @@ def notifications():
 
 @app.get("/api/session/{ws}/screen")
 def screen(ws: str):
+    """Current surface text + whether a permission prompt is pending.
+
+    Pending state comes from the Feed RPC (exact), joined to this workspace by
+    cwd. Falls back to the screen-scrape heuristic only if the Feed lookup
+    can't resolve the workspace or errors.
+    """
     try:
         text = cmux.read_screen(ws)
-        return {"text": text, "pending_approval": cmux.detect_approval(text)}
+        pending = None
+        try:
+            wsobj = cmux.get_workspace(ws)
+            item = cmux.pending_permission(wsobj.cwd if wsobj else None)
+            if item:
+                pending = {
+                    "request_id": item.get("request_id"),
+                    "title": item.get("title") or item.get("tool_name"),
+                    "tool_name": item.get("tool_name"),
+                }
+        except cmux.CmuxError:
+            pass  # fall through to heuristic
+        return {
+            "text": text,
+            "pending_approval": bool(pending) or cmux.detect_approval(text),
+            "pending": pending,
+        }
     except cmux.CmuxError as e:
         raise HTTPException(503, str(e))
 
@@ -123,7 +145,7 @@ def send(ws: str, body: SendBody):
     try:
         cmux.send_text(ws, body.text)
         if body.enter:
-            cmux.send_key(ws, "Return")
+            cmux.send_key(ws, "enter")
         return {"ok": True}
     except cmux.CmuxError as e:
         raise HTTPException(503, str(e))
@@ -138,16 +160,26 @@ def key(ws: str, body: KeyBody):
         raise HTTPException(503, str(e))
 
 
-# Approve / deny a pending permission prompt.
-# VERIFY against your actual Claude Code prompt. This assumes the numbered
-# picker (1 = Yes, 3 = No). If your prompt differs, adjust the sequences —
-# this is the one genuinely prompt-shape-dependent bit in the server.
+# Approve / deny a pending permission prompt via the Feed RPC.
+# The server finds the workspace's pending permissionRequest (joined by cwd) and
+# answers it with feed.permission.reply {request_id, mode}. Approve -> "once"
+# (this action only); Deny -> "deny". No prompt-shape parsing, no typing "1".
+def _answer(ws: str, approve: bool):
+    wsobj = cmux.get_workspace(ws)
+    if wsobj is None:
+        raise HTTPException(404, f"unknown workspace {ws!r}")
+    item = cmux.pending_permission(wsobj.cwd)
+    if not item:
+        raise HTTPException(409, "no pending permission prompt for this workspace")
+    cmux.reply_permission(item["request_id"], approve=approve)
+    return {"ok": True, "answered": "approve" if approve else "deny",
+            "request_id": item["request_id"]}
+
+
 @app.post("/api/session/{ws}/approve")
 def approve(ws: str):
     try:
-        cmux.send_text(ws, "1")
-        cmux.send_key(ws, "Return")
-        return {"ok": True}
+        return _answer(ws, approve=True)
     except cmux.CmuxError as e:
         raise HTTPException(503, str(e))
 
@@ -155,9 +187,7 @@ def approve(ws: str):
 @app.post("/api/session/{ws}/deny")
 def deny(ws: str):
     try:
-        cmux.send_text(ws, "3")
-        cmux.send_key(ws, "Return")
-        return {"ok": True}
+        return _answer(ws, approve=False)
     except cmux.CmuxError as e:
         raise HTTPException(503, str(e))
 

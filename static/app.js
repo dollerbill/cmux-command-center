@@ -202,9 +202,18 @@ function select(w) {
   screenTimer = setInterval(refreshScreen, POLL_SCREEN);
 }
 
-function setApprove(on) {
+function setApprove(on, pending) {
   const bar = $("#approvebar");
-  if (bar) bar.style.display = on ? "flex" : "none";
+  if (!bar) return;
+  bar.style.display = on ? "flex" : "none";
+  const lbl = $("#apprWhat");
+  if (lbl) {
+    // Show WHAT is being approved when the server resolved it from the Feed
+    // (e.g. "Run Bash?"). Falls back to a generic label for the screen-scrape
+    // heuristic, which knows a prompt exists but not its tool.
+    const tool = pending && (pending.title || pending.tool_name);
+    lbl.textContent = tool ? `Allow ${tool}?` : "Permission requested";
+  }
 }
 
 async function refreshScreen() {
@@ -216,10 +225,10 @@ async function refreshScreen() {
     return;
   }
   try {
-    const { text, pending_approval } = await api(
+    const { text, pending_approval, pending } = await api(
       `/api/session/${encodeURIComponent(selected)}/screen`);
     renderTerm(text || "(empty surface)");
-    setApprove(!!pending_approval);
+    setApprove(!!pending_approval, pending);
   } catch (e) {
     renderTerm("(could not read surface: " + e.message + ")");
     setApprove(false);
@@ -231,10 +240,16 @@ async function approveSelected(act) {
   if (demo) { alert(`demo: would ${act} the prompt`); return; }
   try {
     await api(`/api/session/${encodeURIComponent(selected)}/${act}`, { method: "POST" });
+    setApprove(false);  // optimistic: hide the bar; the poll re-shows it if still pending
     setTimeout(refreshScreen, 400);
     setTimeout(loadWorkspaces, 400);
   } catch (e) {
-    alert(`${act} failed: ${e.message}`);
+    // 409 = the prompt was already answered/expired by the time we replied.
+    const msg = /409|no pending/i.test(e.message)
+      ? "That prompt is no longer pending (already answered or expired)."
+      : `${act} failed: ${e.message}`;
+    alert(msg);
+    refreshScreen();
   }
 }
 
@@ -268,8 +283,10 @@ async function sendKey(key) {
 }
 
 function buildKeys() {
-  const keys = [["esc", "Escape"], ["tab", "Tab"], ["\u2191", "Up"], ["\u2193", "Down"],
-                ["ctrl-c", "C-c"], ["y", "y"], ["n", "n"], ["\u23ce enter", "Return"]];
+  // cmux key names are lowercase: `enter`, `escape`, `tab`, arrows, chords like
+  // `ctrl+c` (verified via `cmux send-key --help`). NOT tmux-style Return/C-c.
+  const keys = [["esc", "escape"], ["tab", "tab"], ["\u2191", "up"], ["\u2193", "down"],
+                ["ctrl-c", "ctrl+c"], ["y", "y"], ["n", "n"], ["\u23ce enter", "enter"]];
   const wrap = $("#keys");
   keys.forEach(([label, key]) => {
     const b = document.createElement("span");
@@ -286,6 +303,7 @@ function buildApproveBar() {
   bar.className = "approve";
   bar.style.display = "none";
   bar.innerHTML =
+    `<span id="apprWhat" class="approve-what"></span>` +
     `<button class="btn btn-y" id="apprY">\u2713 Approve</button>` +
     `<button class="btn btn-n" id="apprN">\u2715 Deny</button>`;
   $("#term").insertAdjacentElement("afterend", bar);
