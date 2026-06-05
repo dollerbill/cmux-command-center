@@ -120,9 +120,13 @@ def screen(ws: str):
     try:
         text = cmux.read_screen(ws)
         pending = None
+        feed_authoritative = False
         try:
             wsobj = cmux.get_workspace(ws)
             item = cmux.pending_permission(wsobj.cwd if wsobj else None)
+            # The Feed answered without erroring, so it is the source of truth:
+            # `item is None` here means nothing is pending, full stop.
+            feed_authoritative = True
             if item:
                 pending = {
                     "request_id": item.get("request_id"),
@@ -130,10 +134,16 @@ def screen(ws: str):
                     "tool_name": item.get("tool_name"),
                 }
         except cmux.CmuxError:
-            pass  # fall through to heuristic
+            feed_authoritative = False  # couldn't consult the Feed — use heuristic
+        # Trust the Feed when we could reach it (prevents a ghost bar lingering on
+        # the flattened screen snapshot after a prompt is already resolved). Only
+        # fall back to the screen-scrape heuristic when the Feed was unreachable.
+        pending_approval = bool(pending) or (
+            not feed_authoritative and cmux.detect_approval(text)
+        )
         return {
             "text": text,
-            "pending_approval": bool(pending) or cmux.detect_approval(text),
+            "pending_approval": pending_approval,
             "pending": pending,
         }
     except cmux.CmuxError as e:

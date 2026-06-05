@@ -41,6 +41,7 @@ no shared id; --id-format both does.)
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -163,29 +164,76 @@ _APPROVE_MODE = "once"
 _DENY_MODE = "deny"
 
 
+def _norm_path(p: str | None) -> str | None:
+    """Normalize a path for joining: resolve symlinks, drop a trailing slash.
+
+    Feed item `cwd` and workspace `current_directory` can describe the *same*
+    directory with different strings — trailing slash, or macOS symlinks like
+    `/var` → `/private/var`, `/tmp` → `/private/tmp`. realpath collapses those so
+    the join compares the real directory, not the raw string.
+    """
+    if not p:
+        return None
+    try:
+        return os.path.realpath(p).rstrip("/")
+    except OSError:
+        return p.rstrip("/")
+
+
 def pending_permission(workspace_cwd: str | None) -> dict | None:
     """Return the pending permissionRequest feed item for this workspace, if any.
 
-    Joins on cwd (the only workspace linkage feed items expose). Returns the
-    raw item dict (so callers can show title/tool_name and reply by request_id),
-    or None when nothing is awaiting approval.
+    Feed items carry no workspace_id — only a `cwd` — so this is the join to a
+    workspace, and it must be robust (a raw `cwd == current_directory` silently
+    misses, which makes Approve a dead button while keys still work). Resolution,
+    most-specific first:
+
+      1. Exact match on the *normalized* cwd (handles trailing-slash / symlink skew).
+      2. Subdirectory match — the agent `cd`'d below the workspace root, so the
+         request's cwd sits under `current_directory`.
+      3. Single-pending fallback — if exactly one permission request is pending in
+         the whole feed it's unambiguous (the remote user is looking at one
+         session), so use it even when the cwd didn't join.
+
+    Returns the raw item dict (callers show title/tool_name and reply by
+    request_id), or None when nothing is awaiting approval. When several requests
+    match, the most recent wins — that's the one on screen.
     """
     feed = rpc("feed.list")
     items = feed.get("items") if isinstance(feed, dict) else None
     if not isinstance(items, list):
         return None
-    matches = [
+    pending = [
         it for it in items
         if it.get("kind") == "permissionRequest"
         and it.get("status") == "pending"
         and it.get("request_id")
-        and (workspace_cwd is None or it.get("cwd") == workspace_cwd)
     ]
-    if not matches:
+    if not pending:
         return None
-    # A workspace can have several pending requests queued at once (each tool
-    # call makes its own). Answer the most recent — that's the one on screen.
-    return max(matches, key=lambda it: it.get("created_at") or "")
+
+    def newest(matches: list[dict]) -> dict:
+        return max(matches, key=lambda it: it.get("created_at") or "")
+
+    # Caller couldn't resolve the workspace's cwd — best effort: newest pending.
+    want = _norm_path(workspace_cwd)
+    if not want:
+        return newest(pending)
+
+    exact = [it for it in pending if _norm_path(it.get("cwd")) == want]
+    if exact:
+        return newest(exact)
+
+    under = [
+        it for it in pending
+        if (c := _norm_path(it.get("cwd"))) and c.startswith(want + "/")
+    ]
+    if under:
+        return newest(under)
+
+    if len(pending) == 1:
+        return pending[0]
+    return None
 
 
 def reply_permission(request_id: str, approve: bool) -> Any | None:
