@@ -129,6 +129,18 @@ body{
 .term:empty::before{content:"Select a session to view its surface\2026";
   color:var(--faint)}
 
+/* structural color hierarchy on the flat read-screen snapshot (see app.js
+   lineClass). Tool output and chrome recede; messages, prompts, and your own
+   input stand out. */
+.term .ln-tool{color:var(--accent); font-weight:650}
+.term .ln-assistant{color:var(--text)}
+.term .ln-result{color:var(--dim)}
+.term .ln-user{color:var(--cyan); font-weight:600}
+.term .ln-prompt{color:var(--warn); font-weight:700}
+.term .ln-option{color:var(--text)}
+.term .ln-sel{color:var(--accent); font-weight:700}
+.term .ln-chrome{color:var(--faint)}
+
 /* ---- key bar ---- */
 .keys{display:flex; gap:6px; margin-top:12px; flex-wrap:wrap}
 .key{background:var(--panel2); border:1px solid var(--line); color:var(--dim);

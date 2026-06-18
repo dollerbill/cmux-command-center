@@ -3,10 +3,44 @@
 Enhancement backlog and known limitations. Ordered roughly by value-to-effort.
 Each item has enough context to be picked up cold.
 
-**Status (2026-05-31):** P1 fully resolved (send-key naming verified incl. live
+**Status (2026-06-01):** P1 fully resolved (send-key naming verified incl. live
 key spot-checks + Approve/Deny rewritten onto cmux's Feed RPC, verified live).
-P4 title-collision resolved (UUID join). Outstanding: P4 notify-poll de-dup (a
-real bug, parked until Telegram lands), then P2 (launchd) → P3 (streaming) etc.
+P4 title-collision resolved (UUID join). Approve/Deny hardened — see *Approve/Deny
+robustness* below (cwd-join skew + ghost-bar fixed). Outstanding: P4 notify-poll
+de-dup (a real bug, parked until Telegram lands), then P2 (launchd) → P3
+(streaming) etc.
+
+---
+
+## ✅ RESOLVED (2026-06-01) — Approve/Deny robustness (two field-reported bugs)
+
+Both traced to one design flaw: the approve bar's **visibility** and the approve
+**action** were driven by *different* signals, free to disagree.
+
+1. **Approve did nothing remotely (dead button).** The action joined a pending
+   Feed `permissionRequest` to the workspace by raw `cwd == current_directory`,
+   which silently misses on trailing-slash / macOS symlink skew (`/tmp` →
+   `/private/tmp`) or when the agent `cd`'d into a subdir — while the bar still
+   showed via the `detect_approval` screen-scrape fallback. Keys worked (they
+   target `--workspace ref`, no cwd), so the symptom was "only Approve is dead."
+   Fixed in `cmux.pending_permission` (`app/cmux.py`): normalize paths
+   (`_norm_path` → realpath + strip trailing slash), then match exact →
+   subdirectory-prefix → single-pending fallback. No app-side approval TTL exists,
+   so "sat for minutes" was a red herring — it was the join, not a timeout.
+
+2. **Bar lingered after host-approve (ghost button).** Visibility was
+   `bool(feed_pending) OR detect_approval(text)`; `read-screen` returns a
+   flattened snapshot whose `1. Yes / 2. No` text persists after the prompt
+   resolves, so the heuristic re-raised the bar every poll. Fixed in the `/screen`
+   route (`app/main.py`): when the Feed is reachable it is authoritative
+   (`feed_authoritative`), and the screen heuristic is used **only** as a fallback
+   when the Feed can't be consulted. (The ~0–2s `POLL_SCREEN` latency is inherent
+   to polling and unchanged; P3's `events.stream` would remove it.)
+
+Verified with a no-cmux unit harness monkeypatching `cmux.rpc` over all join
+paths (exact / trailing-slash / subdir / single-pending / ambiguous→None /
+newest-wins / no-pending→None / unresolved-cwd). Live re-verification against real
+cmux still pending (cmux isn't on PATH outside a pane).
 
 ---
 
@@ -149,6 +183,17 @@ files) or the markdown convention (portable, Obsidian-syncable) — or both.
 ---
 
 ## P6 — Nicer terminal / glyphs
+
+### ✅ RESOLVED (2026-06-05) — readability via structural color hierarchy
+The "giant wall of same-color text" was the flattened `read-screen` snapshot
+carrying almost no ANSI color. Rather than wait on streaming, the front-end now
+classifies each line by its transcript role (`lineClass` in `static/app.js`) and
+colors it: tool calls (accent) and output (dim) recede, assistant messages,
+permission prompts (warn), the selected option, and your own input stand out.
+High-precision rules only — unmatched lines stay default, so markdown `-`/`+`
+lines are never miscolored as diffs (verified). This does **not** add true
+per-character color (still needs P3 streaming below); it recovers a reading
+hierarchy from the monochrome data we already have.
 
 - **Nerd Font prompt glyphs** (`±`, branch icons, P10k separators) are currently
   *stripped* (PUA code points removed) so they don't show as garbage. If you

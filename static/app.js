@@ -26,17 +26,20 @@ const ANSI_BG = {
 };
 const escHtml = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
+// Drop non-SGR escapes (cursor moves, erase) and unrenderable Nerd Font /
+// Powerline private-use-area glyphs. read-screen's flattened snapshot is heavy
+// in these; removing them leaves clean text. Shared by the ANSI converter and
+// the structural classifier so both see the same characters.
+function stripChrome(t) {
+  return t.replace(/\x1b\[[0-9;?]*[A-HJKfhlsu]/g, "")
+          .replace(/[\uE000-\uF8FF]/g, "")
+          .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
+          .replace(/[\u{100000}-\u{10FFFD}]/gu, "");
+}
+
 function ansiToHtml(input) {
   if (!input) return "";
-  // Drop non-SGR escape sequences (cursor movement, erase, etc.).
-  let t = input.replace(/\x1b\[[0-9;?]*[A-HJKfhlsu]/g, "");
-  // Strip Nerd Font / Powerline private-use-area glyphs that the browser
-  // can't render (prompt icons, segment separators). These arrive as PUA
-  // code points and otherwise show as garbage boxes. read-screen gives a
-  // flattened snapshot heavy in these; removing them leaves clean text.
-  t = t.replace(/[\uE000-\uF8FF]/g, "")          // BMP private use area
-       .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")    // supplementary PUA-A
-       .replace(/[\u{100000}-\u{10FFFD}]/gu, ""); // supplementary PUA-B
+  const t = stripChrome(input);
   // Split on SGR color sequences, keeping the codes.
   const parts = t.split(/\x1b\[([0-9;]*)m/);
   let out = "", open = false;
@@ -74,9 +77,32 @@ function ansiToHtml(input) {
   return out;
 }
 
+// read-screen returns a flat, near-monochrome snapshot, so we recover a reading
+// hierarchy structurally: classify each line by its role in a Claude Code
+// transcript and color it, then run inline ANSI within the line (per-line so an
+// SGR span can't straddle a line boundary). High-precision rules only — when a
+// line doesn't clearly match, it stays default rather than risk miscoloring.
+function lineClass(line) {
+  const t = stripChrome(line).replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
+  if (!t.trim()) return "";
+  if (/want to proceed\??/i.test(t)) return "ln-prompt";
+  if (/^\s*[❯>]?\s*\d+\.\s+(yes|no)\b/i.test(t))
+    return /^\s*❯/.test(t) ? "ln-option ln-sel" : "ln-option";
+  if (/^\s*[●⏺]\s+[A-Z][\w.-]*\(/.test(t)) return "ln-tool";   // ● Bash(…)
+  if (/^\s*[●⏺]\s/.test(t)) return "ln-assistant";             // ● message
+  if (/^\s*[⎿└├]/.test(t)) return "ln-result";           // ⎿ tool output
+  if (/^\s*>\s/.test(t)) return "ln-user";                               // > your input
+  if (/^[\s─-╿]+$/.test(t)) return "ln-chrome";                // box/sep rules
+  return "";
+}
+
 function renderTerm(text) {
   const el = $("#term");
-  el.innerHTML = ansiToHtml(text || "");
+  el.innerHTML = (text || "").split("\n").map(line => {
+    const cls = lineClass(line);
+    const inner = ansiToHtml(line);
+    return cls ? `<span class="${cls}">${inner}</span>` : inner;
+  }).join("\n");
   el.scrollTop = el.scrollHeight;
 }
 

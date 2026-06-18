@@ -103,11 +103,17 @@ addition if the tailnet isn't single-user (tracked in `REMAINING.md`).
 ## Known limitation: terminal is low-color
 
 `cmux read-screen` returns a flattened character snapshot — mostly plain text
-plus prompt glyphs, with little to no ANSI color. So the terminal pane renders
-**clean but largely monochrome**; this is a property of the data source, not the
-converter. Real per-character color requires the live surface stream from cmux's
-socket (the same work as live streaming). See `REMAINING.md` → *Live surface
-streaming*, which is the single item that unlocks both smooth updates and color.
+plus prompt glyphs, with little to no ANSI color. So the *source* is largely
+monochrome; this is a property of the data, not the converter. To keep it
+readable anyway, the front-end applies a **structural color hierarchy**: it
+classifies each line by its role in a Claude Code transcript (assistant message,
+tool call, tool output, permission prompt, your input, separators) and colors it
+accordingly — see `lineClass` in `static/app.js`. That recovers a reading
+hierarchy without inventing color the source didn't send.
+
+True *per-character* color (for TUIs like lazygit) still requires the live
+surface stream from cmux's socket. See `REMAINING.md` → *Live surface streaming*,
+the single item that unlocks both smooth updates and full color.
 
 ## Status
 
