@@ -149,6 +149,10 @@ body{
 .key:hover{border-color:var(--accent); color:var(--text);
   background:var(--panel3)}
 .key:active{transform:translateY(1px)}
+.key-mode{margin-left:auto; color:var(--review);
+  border-color:rgba(192,140,255,.35); background:rgba(192,140,255,.08)}
+.key-mode:hover{border-color:var(--review); color:var(--review);
+  background:rgba(192,140,255,.16)}
 
 /* ---- approve bar (detail pane only, shown when a prompt is detected) ---- */
 .approve{display:flex; gap:9px; margin-top:12px; align-items:center}

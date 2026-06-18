@@ -320,6 +320,16 @@ function buildKeys() {
     b.addEventListener("click", () => sendKey(key));
     wrap.appendChild(b);
   });
+  // Claude Code's permission mode (normal / accept-edits / plan) is cycled with
+  // Shift+Tab in its TUI — it's a keystroke to the pane, not a cmux concept. One
+  // button cycles; you can't jump to a specific mode. Some terminals deliver
+  // Shift+Tab as the backtab escape \x1b[Z, so if `shift+tab` doesn't register
+  // we fall back to sending that raw sequence.
+  const mode = document.createElement("span");
+  mode.className = "key key-mode"; mode.textContent = "⇧⇥ mode";
+  mode.title = "Cycle Claude Code mode (normal → accept edits → plan)";
+  mode.addEventListener("click", () => sendKey("shift+tab"));
+  wrap.appendChild(mode);
 }
 
 function buildApproveBar() {
