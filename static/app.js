@@ -98,17 +98,25 @@ function lineClass(line) {
 
 function renderTerm(text) {
   const el = $("#term");
+  // Follow new output only when the user is already at (or near) the bottom, so
+  // the 2s poll doesn't yank them down while they scroll back through history.
+  // pinBottom forces a jump on session switch, where the prior scrollTop is
+  // meaningless for the new content.
+  const atBottom = pinBottom || el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  const prev = el.scrollTop;
   el.innerHTML = (text || "").split("\n").map(line => {
     const cls = lineClass(line);
     const inner = ansiToHtml(line);
     return cls ? `<span class="${cls}">${inner}</span>` : inner;
   }).join("\n");
-  el.scrollTop = el.scrollHeight;
+  el.scrollTop = atBottom ? el.scrollHeight : prev;
+  pinBottom = false;
 }
 
 let selected = null;
 let screenTimer = null;
 let demo = false;
+let pinBottom = true;
 
 const POLL_LIST = 4000;
 const POLL_SCREEN = 2000;
@@ -218,6 +226,7 @@ async function loadWorkspaces() {
 
 function select(w) {
   selected = w.id;
+  pinBottom = true;  // jump to latest output when opening a session
   $("#d-name").textContent = w.name;
   $("#d-badge").innerHTML = w.needs_attention ? badge(w) : "";
   $("#target").textContent = `\u2192 cmux send --workspace "${w.id}"`;
